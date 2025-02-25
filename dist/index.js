@@ -1025,6 +1025,61 @@ const fs = __importStar(__nccwpck_require__(7147));
 const fsHelper = __importStar(__nccwpck_require__(7219));
 const io = __importStar(__nccwpck_require__(7436));
 const path = __importStar(__nccwpck_require__(1017));
+const child_process_1 = __nccwpck_require__(2081);
+function getUserName(uid) {
+    try {
+        return (0, child_process_1.execSync)(`id -un ${uid}`).toString().trim();
+    }
+    catch (error) {
+        return uid.toString();
+    }
+}
+// Function to get group name from gid
+function getGroupName(gid) {
+    try {
+        return (0, child_process_1.execSync)(`id -gn ${gid}`).toString().trim();
+    }
+    catch (error) {
+        return gid.toString();
+    }
+}
+function listDirectory(dirPath) {
+    return __awaiter(this, void 0, void 0, function* () {
+        try {
+            // Read directory contents
+            const files = yield fs.promises.readdir(dirPath);
+            // Get details for each file
+            const filesInfo = yield Promise.all(files.map((file) => __awaiter(this, void 0, void 0, function* () {
+                const filePath = path.join(dirPath, file);
+                const stats = yield fs.promises.stat(filePath);
+                // Get user and group info
+                const owner = getUserName(stats.uid);
+                const group = getGroupName(stats.gid);
+                return {
+                    name: file,
+                    size: stats.size,
+                    mode: stats.mode,
+                    mtime: stats.mtime,
+                    isDirectory: stats.isDirectory(),
+                    owner,
+                    group
+                };
+            })));
+            // Format and print like ls -la
+            core.info(`total ${filesInfo.length}`);
+            for (const file of filesInfo) {
+                const mode = file.isDirectory ? 'd' : '-';
+                const permissions = (file.mode & 0o777).toString(8);
+                const date = file.mtime.toDateString();
+                core.info(`${mode}${permissions} ${file.owner.padEnd(8)} ${file.group.padEnd(8)} ` +
+                    `${file.size.toString().padStart(8)} ${date} ${file.name}`);
+            }
+        }
+        catch (error) {
+            core.info(`Error reading directory: ${error}`);
+        }
+    });
+}
 function prepareExistingDirectory(git, repositoryPath, repositoryUrl, clean, ref) {
     return __awaiter(this, void 0, void 0, function* () {
         var _a;
@@ -1032,13 +1087,20 @@ function prepareExistingDirectory(git, repositoryPath, repositoryUrl, clean, ref
         assert.ok(repositoryUrl, 'Expected repositoryUrl to be defined');
         // Indicates whether to delete the directory contents
         let remove = false;
+        yield listDirectory('/home/runner/cache/repositories/factorialco');
+        yield listDirectory(repositoryPath);
         // Check whether using git or REST API
         if (!git) {
+            core.info(`Setting remove = true because !git`);
             remove = true;
         }
         // Fetch URL does not match
         else if (!fsHelper.directoryExistsSync(path.join(repositoryPath, '.git')) ||
             repositoryUrl !== (yield git.tryGetFetchUrl())) {
+            const fetchUrl = yield git.tryGetFetchUrl();
+            core.info(`Setting remove = true because no .git or git.tryGetFetchUrl()`);
+            core.info(`RepositoryUrl: ${repositoryUrl}`);
+            core.info(`tryGetFetchUrl: ${fetchUrl}`);
             remove = true;
         }
         else {
@@ -1096,9 +1158,11 @@ function prepareExistingDirectory(git, repositoryPath, repositoryUrl, clean, ref
                     core.startGroup('Cleaning the repository');
                     if (!(yield git.tryClean())) {
                         core.debug(`The clean command failed. This might be caused by: 1) path too long, 2) permission issue, or 3) file in use. For further investigation, manually run 'git clean -ffdx' on the directory '${repositoryPath}'.`);
+                        core.info(`Setting remove = true because clean failed`);
                         remove = true;
                     }
                     else if (!(yield git.tryReset())) {
+                        core.info(`Setting remove = true because reset failed`);
                         remove = true;
                     }
                     core.endGroup();
@@ -1109,6 +1173,7 @@ function prepareExistingDirectory(git, repositoryPath, repositoryUrl, clean, ref
             }
             catch (error) {
                 core.warning(`Unable to prepare the existing repository. The repository will be recreated instead.`);
+                core.info(`Setting remove = true because try - catch`);
                 remove = true;
             }
         }
@@ -1183,14 +1248,17 @@ function getSource(settings) {
         // Repository URL
         core.info(`Syncing repository: ${settings.repositoryOwner}/${settings.repositoryName}`);
         const repositoryUrl = urlHelper.getFetchUrl(settings);
+        core.info(`Repository path: ${settings.repositoryPath}...`);
         // Remove conflicting file path
         if (fsHelper.fileExistsSync(settings.repositoryPath)) {
+            core.info(`Removing repository ${settings.repositoryPath}...`);
             yield io.rmRF(settings.repositoryPath);
         }
         // Create directory
         let isExisting = true;
         if (!fsHelper.directoryExistsSync(settings.repositoryPath)) {
             isExisting = false;
+            core.info(`Creating repository ${settings.repositoryPath}...`);
             yield io.mkdirP(settings.repositoryPath);
         }
         // Git command manager

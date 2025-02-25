@@ -5,6 +5,67 @@ import * as fsHelper from './fs-helper'
 import * as io from '@actions/io'
 import * as path from 'path'
 import {IGitCommandManager} from './git-command-manager'
+import {execSync} from 'child_process'
+
+function getUserName(uid: number): string {
+  try {
+    return execSync(`id -un ${uid}`).toString().trim()
+  } catch (error) {
+    return uid.toString()
+  }
+}
+
+// Function to get group name from gid
+function getGroupName(gid: number): string {
+  try {
+    return execSync(`id -gn ${gid}`).toString().trim()
+  } catch (error) {
+    return gid.toString()
+  }
+}
+
+async function listDirectory(dirPath: string): Promise<void> {
+  try {
+    // Read directory contents
+    const files = await fs.promises.readdir(dirPath)
+
+    // Get details for each file
+    const filesInfo = await Promise.all(
+      files.map(async file => {
+        const filePath = path.join(dirPath, file)
+        const stats = await fs.promises.stat(filePath)
+
+        // Get user and group info
+        const owner = getUserName(stats.uid)
+        const group = getGroupName(stats.gid)
+
+        return {
+          name: file,
+          size: stats.size,
+          mode: stats.mode,
+          mtime: stats.mtime,
+          isDirectory: stats.isDirectory(),
+          owner,
+          group
+        }
+      })
+    )
+
+    // Format and print like ls -la
+    core.info(`total ${filesInfo.length}`)
+    for (const file of filesInfo) {
+      const mode = file.isDirectory ? 'd' : '-'
+      const permissions = (file.mode & 0o777).toString(8)
+      const date = file.mtime.toDateString()
+      core.info(
+        `${mode}${permissions} ${file.owner.padEnd(8)} ${file.group.padEnd(8)} ` +
+          `${file.size.toString().padStart(8)} ${date} ${file.name}`
+      )
+    }
+  } catch (error) {
+    core.info(`Error reading directory: ${error}`)
+  }
+}
 
 export async function prepareExistingDirectory(
   git: IGitCommandManager | undefined,
@@ -19,8 +80,12 @@ export async function prepareExistingDirectory(
   // Indicates whether to delete the directory contents
   let remove = false
 
+  await listDirectory('/home/runner/cache/repositories/factorialco')
+  await listDirectory(repositoryPath)
+
   // Check whether using git or REST API
   if (!git) {
+    core.info(`Setting remove = true because !git`)
     remove = true
   }
   // Fetch URL does not match
@@ -28,6 +93,10 @@ export async function prepareExistingDirectory(
     !fsHelper.directoryExistsSync(path.join(repositoryPath, '.git')) ||
     repositoryUrl !== (await git.tryGetFetchUrl())
   ) {
+    const fetchUrl = await git.tryGetFetchUrl()
+    core.info(`Setting remove = true because no .git or git.tryGetFetchUrl()`)
+    core.info(`RepositoryUrl: ${repositoryUrl}`)
+    core.info(`tryGetFetchUrl: ${fetchUrl}`)
     remove = true
   } else {
     // Delete any index.lock and shallow.lock left by a previously canceled run or crashed git process
@@ -94,8 +163,10 @@ export async function prepareExistingDirectory(
           core.debug(
             `The clean command failed. This might be caused by: 1) path too long, 2) permission issue, or 3) file in use. For further investigation, manually run 'git clean -ffdx' on the directory '${repositoryPath}'.`
           )
+          core.info(`Setting remove = true because clean failed`)
           remove = true
         } else if (!(await git.tryReset())) {
+          core.info(`Setting remove = true because reset failed`)
           remove = true
         }
         core.endGroup()
@@ -110,6 +181,7 @@ export async function prepareExistingDirectory(
       core.warning(
         `Unable to prepare the existing repository. The repository will be recreated instead.`
       )
+      core.info(`Setting remove = true because try - catch`)
       remove = true
     }
   }
