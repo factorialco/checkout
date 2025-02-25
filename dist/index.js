@@ -1034,11 +1034,16 @@ function prepareExistingDirectory(git, repositoryPath, repositoryUrl, clean, ref
         let remove = false;
         // Check whether using git or REST API
         if (!git) {
+            core.info(`Setting remove = true because !git`);
             remove = true;
         }
         // Fetch URL does not match
         else if (!fsHelper.directoryExistsSync(path.join(repositoryPath, '.git')) ||
             repositoryUrl !== (yield git.tryGetFetchUrl())) {
+            const fetchUrl = yield git.tryGetFetchUrl();
+            core.info(`Setting remove = true because no .git or git.tryGetFetchUrl()`);
+            core.info(`RepositoryUrl: ${repositoryUrl}`);
+            core.info(`tryGetFetchUrl: ${(fetchUrl)}`);
             remove = true;
         }
         else {
@@ -1096,9 +1101,11 @@ function prepareExistingDirectory(git, repositoryPath, repositoryUrl, clean, ref
                     core.startGroup('Cleaning the repository');
                     if (!(yield git.tryClean())) {
                         core.debug(`The clean command failed. This might be caused by: 1) path too long, 2) permission issue, or 3) file in use. For further investigation, manually run 'git clean -ffdx' on the directory '${repositoryPath}'.`);
+                        core.info(`Setting remove = true because clean failed`);
                         remove = true;
                     }
                     else if (!(yield git.tryReset())) {
+                        core.info(`Setting remove = true because reset failed`);
                         remove = true;
                     }
                     core.endGroup();
@@ -1109,6 +1116,7 @@ function prepareExistingDirectory(git, repositoryPath, repositoryUrl, clean, ref
             }
             catch (error) {
                 core.warning(`Unable to prepare the existing repository. The repository will be recreated instead.`);
+                core.info(`Setting remove = true because try - catch`);
                 remove = true;
             }
         }
@@ -1183,14 +1191,17 @@ function getSource(settings) {
         // Repository URL
         core.info(`Syncing repository: ${settings.repositoryOwner}/${settings.repositoryName}`);
         const repositoryUrl = urlHelper.getFetchUrl(settings);
+        core.info(`Repository path: ${settings.repositoryPath}...`);
         // Remove conflicting file path
         if (fsHelper.fileExistsSync(settings.repositoryPath)) {
+            core.info(`Removing repository ${settings.repositoryPath}...`);
             yield io.rmRF(settings.repositoryPath);
         }
         // Create directory
         let isExisting = true;
         if (!fsHelper.directoryExistsSync(settings.repositoryPath)) {
             isExisting = false;
+            core.info(`Creating repository ${settings.repositoryPath}...`);
             yield io.mkdirP(settings.repositoryPath);
         }
         // Git command manager

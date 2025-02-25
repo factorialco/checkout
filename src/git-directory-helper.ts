@@ -21,6 +21,7 @@ export async function prepareExistingDirectory(
 
   // Check whether using git or REST API
   if (!git) {
+    core.info(`Setting remove = true because !git`)
     remove = true
   }
   // Fetch URL does not match
@@ -28,6 +29,11 @@ export async function prepareExistingDirectory(
     !fsHelper.directoryExistsSync(path.join(repositoryPath, '.git')) ||
     repositoryUrl !== (await git.tryGetFetchUrl())
   ) {
+    const fetchUrl = await git.tryGetFetchUrl()
+    core.info(`Setting remove = true because no .git or git.tryGetFetchUrl()`)
+    core.info(`RepositoryUrl: ${repositoryUrl}`)
+    core.info(`tryGetFetchUrl: ${(fetchUrl)}`)
+
     remove = true
   } else {
     // Delete any index.lock and shallow.lock left by a previously canceled run or crashed git process
@@ -94,8 +100,10 @@ export async function prepareExistingDirectory(
           core.debug(
             `The clean command failed. This might be caused by: 1) path too long, 2) permission issue, or 3) file in use. For further investigation, manually run 'git clean -ffdx' on the directory '${repositoryPath}'.`
           )
+          core.info(`Setting remove = true because clean failed`)
           remove = true
         } else if (!(await git.tryReset())) {
+          core.info(`Setting remove = true because reset failed`)
           remove = true
         }
         core.endGroup()
@@ -110,6 +118,7 @@ export async function prepareExistingDirectory(
       core.warning(
         `Unable to prepare the existing repository. The repository will be recreated instead.`
       )
+      core.info(`Setting remove = true because try - catch`)
       remove = true
     }
   }

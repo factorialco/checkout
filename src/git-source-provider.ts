@@ -22,8 +22,12 @@ export async function getSource(settings: IGitSourceSettings): Promise<void> {
   )
   const repositoryUrl = urlHelper.getFetchUrl(settings)
 
+  core.info(`Repository path: ${settings.repositoryPath}...`)
+
   // Remove conflicting file path
   if (fsHelper.fileExistsSync(settings.repositoryPath)) {
+    core.info(`Removing repository ${settings.repositoryPath}...`)
+
     await io.rmRF(settings.repositoryPath)
   }
 
@@ -31,6 +35,8 @@ export async function getSource(settings: IGitSourceSettings): Promise<void> {
   let isExisting = true
   if (!fsHelper.directoryExistsSync(settings.repositoryPath)) {
     isExisting = false
+    core.info(`Creating repository ${settings.repositoryPath}...`)
+
     await io.mkdirP(settings.repositoryPath)
   }
 
