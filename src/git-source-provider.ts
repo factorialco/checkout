@@ -70,7 +70,8 @@ export async function getSource(settings: IGitSourceSettings): Promise<void> {
         settings.repositoryPath,
         repositoryUrl,
         settings.clean,
-        settings.ref
+        settings.ref,
+        settings.fetchRefs
       )
     }
 
@@ -168,7 +169,27 @@ export async function getSource(settings: IGitSourceSettings): Promise<void> {
       fetchOptions.filter = 'blob:none'
     }
 
-    if (settings.fetchDepth <= 0) {
+    // Skip the ref itself: git refuses two sources (its commit and its name) for one destination
+    const fetchRefSpecs = settings.fetchRefs
+      .filter(fetchRef => fetchRef !== settings.ref)
+      .flatMap(fetchRef => refHelper.getRefSpec(fetchRef, ''))
+
+    if (settings.fetchDepth <= 0 && fetchRefSpecs.length) {
+      // Fetch the ref and the extra refs with full history, instead of all branches and tags
+      const refSpec = refHelper.getRefSpec(
+        settings.ref,
+        settings.commit,
+        settings.fetchTags
+      )
+      await git.fetch(refSpec.concat(fetchRefSpecs), fetchOptions)
+
+      if (!(await refHelper.testRef(git, settings.ref, settings.commit))) {
+        throw new Error(
+          `The ref '${settings.ref}' does not point to the expected commit '${settings.commit}'. ` +
+            `The ref may have been updated after the workflow was triggered.`
+        )
+      }
+    } else if (settings.fetchDepth <= 0) {
       // Fetch all branches and tags
       let refSpec = refHelper.getRefSpecForAllHistory(
         settings.ref,
@@ -199,7 +220,7 @@ export async function getSource(settings: IGitSourceSettings): Promise<void> {
         settings.commit,
         settings.fetchTags
       )
-      await git.fetch(refSpec, fetchOptions)
+      await git.fetch(refSpec.concat(fetchRefSpecs), fetchOptions)
 
       // For tags, verify the ref still points to the expected commit.
       // Tags are fetched by ref (not commit), so if a tag was moved after the

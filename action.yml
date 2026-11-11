@@ -77,6 +77,12 @@ inputs:
   fetch-tags:
     description: 'Whether to fetch tags, even if fetch-depth > 0.'
     default: false
+  fetch-refs:
+    description: >
+      Extra fully qualified refs to fetch along with `ref`, one per line (for example
+      `refs/heads/main`). When set with `fetch-depth: 0`, only `ref` and these refs are
+      fetched, with full history, instead of every branch and tag. Blank lines are ignored.
+    default: ''
   show-progress:
     description: 'Whether to show progress status output when fetching.'
     default: true

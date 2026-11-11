@@ -55,6 +55,12 @@ export interface IGitSourceSettings {
   fetchTags: boolean
 
   /**
+   * Extra fully qualified refs to fetch along with the ref. When set with
+   * fetchDepth <= 0, they replace the fetch of all branches and tags.
+   */
+  fetchRefs: string[]
+
+  /**
    * Indicates whether to use the --progress option when fetching
    */
   showProgress: boolean

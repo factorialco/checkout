@@ -133,6 +133,13 @@ Please refer to the [release page](https://github.com/actions/checkout/releases/
     # Default: false
     fetch-tags: ''
 
+    # Extra fully qualified refs to fetch along with `ref`, one per line (for example
+    # `refs/heads/main`). When set with `fetch-depth: 0`, only `ref` and these refs
+    # are fetched, with full history, instead of every branch and tag. Blank lines are
+    # ignored.
+    # Default: 
+    fetch-refs: ''
+
     # Whether to show progress status output when fetching.
     # Default: true
     show-progress: ''

@@ -406,6 +406,36 @@ describe('git-directory-helper tests', () => {
     )
   })
 
+  const removesFetchRefConflicts =
+    'removes remote branches conflicting with fetch refs'
+  it(removesFetchRefConflicts, async () => {
+    // Arrange
+    await setup(removesFetchRefConflicts)
+    await fs.promises.writeFile(path.join(repositoryPath, 'my-file'), '')
+    const mockBranchList = git.branchList as jest.Mock<any, any>
+    mockBranchList.mockImplementation(async (remote: boolean) => {
+      return remote
+        ? ['origin/main/conflict', 'origin/feature', 'origin/remote-branch-2']
+        : []
+    })
+    ref = 'refs/pull/1/merge'
+
+    // Act
+    await gitDirectoryHelper.prepareExistingDirectory(
+      git,
+      repositoryPath,
+      repositoryUrl,
+      clean,
+      ref,
+      ['refs/heads/main', 'refs/heads/feature/x']
+    )
+
+    // Assert
+    expect(git.branchDelete).toHaveBeenCalledTimes(2)
+    expect(git.branchDelete).toHaveBeenCalledWith(true, 'origin/main/conflict')
+    expect(git.branchDelete).toHaveBeenCalledWith(true, 'origin/feature')
+  })
+
   const removesDescendantRemoteBranches = 'removes descendant remote branch'
   it(removesDescendantRemoteBranches, async () => {
     // Arrange

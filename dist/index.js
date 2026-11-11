@@ -1276,8 +1276,8 @@ const fs = __importStar(__nccwpck_require__(7147));
 const fsHelper = __importStar(__nccwpck_require__(7219));
 const io = __importStar(__nccwpck_require__(7436));
 const path = __importStar(__nccwpck_require__(1017));
-function prepareExistingDirectory(git, repositoryPath, repositoryUrl, clean, ref) {
-    return __awaiter(this, void 0, void 0, function* () {
+function prepareExistingDirectory(git_1, repositoryPath_1, repositoryUrl_1, clean_1, ref_1) {
+    return __awaiter(this, arguments, void 0, function* (git, repositoryPath, repositoryUrl, clean, ref, fetchRefs = []) {
         var _a;
         assert.ok(repositoryPath, 'Expected repositoryPath to be defined');
         assert.ok(repositoryUrl, 'Expected repositoryUrl to be defined');
@@ -1320,10 +1320,18 @@ function prepareExistingDirectory(git, repositoryPath, repositoryUrl, clean, ref
                 // Remove any conflicting refs/remotes/origin/*
                 // Example 1: Consider ref is refs/heads/foo and previously fetched refs/remotes/origin/foo/bar
                 // Example 2: Consider ref is refs/heads/foo/bar and previously fetched refs/remotes/origin/foo
-                if (ref) {
-                    ref = ref.startsWith('refs/') ? ref : `refs/heads/${ref}`;
-                    if (ref.startsWith('refs/heads/')) {
-                        const upperName1 = ref.toUpperCase().substr('REFS/HEADS/'.length);
+                // The extra fetch refs are fetched with exact refspecs, so --prune does not clear these either
+                for (let conflictRef of [ref, ...fetchRefs]) {
+                    if (!conflictRef) {
+                        continue;
+                    }
+                    conflictRef = conflictRef.startsWith('refs/')
+                        ? conflictRef
+                        : `refs/heads/${conflictRef}`;
+                    if (conflictRef.startsWith('refs/heads/')) {
+                        const upperName1 = conflictRef
+                            .toUpperCase()
+                            .substr('REFS/HEADS/'.length);
                         const upperName1Slash = `${upperName1}/`;
                         branches = yield git.branchList(true);
                         for (const branch of branches) {
@@ -1467,7 +1475,7 @@ function getSource(settings) {
             }
             // Prepare existing directory, otherwise recreate
             if (isExisting) {
-                yield gitDirectoryHelper.prepareExistingDirectory(git, settings.repositoryPath, repositoryUrl, settings.clean, settings.ref);
+                yield gitDirectoryHelper.prepareExistingDirectory(git, settings.repositoryPath, repositoryUrl, settings.clean, settings.ref, settings.fetchRefs);
             }
             if (!git) {
                 // Downloading using REST API
@@ -1529,7 +1537,20 @@ function getSource(settings) {
             else if (settings.sparseCheckout) {
                 fetchOptions.filter = 'blob:none';
             }
-            if (settings.fetchDepth <= 0) {
+            // Skip the ref itself: git refuses two sources (its commit and its name) for one destination
+            const fetchRefSpecs = settings.fetchRefs
+                .filter(fetchRef => fetchRef !== settings.ref)
+                .flatMap(fetchRef => refHelper.getRefSpec(fetchRef, ''));
+            if (settings.fetchDepth <= 0 && fetchRefSpecs.length) {
+                // Fetch the ref and the extra refs with full history, instead of all branches and tags
+                const refSpec = refHelper.getRefSpec(settings.ref, settings.commit, settings.fetchTags);
+                yield git.fetch(refSpec.concat(fetchRefSpecs), fetchOptions);
+                if (!(yield refHelper.testRef(git, settings.ref, settings.commit))) {
+                    throw new Error(`The ref '${settings.ref}' does not point to the expected commit '${settings.commit}'. ` +
+                        `The ref may have been updated after the workflow was triggered.`);
+                }
+            }
+            else if (settings.fetchDepth <= 0) {
                 // Fetch all branches and tags
                 let refSpec = refHelper.getRefSpecForAllHistory(settings.ref, settings.commit);
                 yield git.fetch(refSpec, fetchOptions);
@@ -1550,7 +1571,7 @@ function getSource(settings) {
             else {
                 fetchOptions.fetchDepth = settings.fetchDepth;
                 const refSpec = refHelper.getRefSpec(settings.ref, settings.commit, settings.fetchTags);
-                yield git.fetch(refSpec, fetchOptions);
+                yield git.fetch(refSpec.concat(fetchRefSpecs), fetchOptions);
                 // For tags, verify the ref still points to the expected commit.
                 // Tags are fetched by ref (not commit), so if a tag was moved after the
                 // workflow was triggered, we would silently check out the wrong commit.
@@ -2055,6 +2076,18 @@ function getInputs() {
         result.fetchTags =
             (core.getInput('fetch-tags') || 'false').toUpperCase() === 'TRUE';
         core.debug(`fetch tags = ${result.fetchTags}`);
+        // Fetch refs
+        // A workflow expression that evaluates to '' leaves a blank or whitespace-only line
+        result.fetchRefs = core
+            .getMultilineInput('fetch-refs')
+            .filter(fetchRef => fetchRef);
+        for (const fetchRef of result.fetchRefs) {
+            // An unqualified name would become a glob refspec (see getRefSpec)
+            if (!fetchRef.startsWith('refs/')) {
+                throw new Error(`Invalid fetch-refs entry '${fetchRef}'. Use a fully qualified ref, for example 'refs/heads/${fetchRef}'.`);
+            }
+        }
+        core.debug(`fetch refs = ${result.fetchRefs}`);
         // Show fetch progress
         result.showProgress =
             (core.getInput('show-progress') || 'true').toUpperCase() === 'TRUE';

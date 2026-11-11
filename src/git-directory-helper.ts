@@ -11,7 +11,8 @@ export async function prepareExistingDirectory(
   repositoryPath: string,
   repositoryUrl: string,
   clean: boolean,
-  ref: string
+  ref: string,
+  fetchRefs: string[] = []
 ): Promise<void> {
   assert.ok(repositoryPath, 'Expected repositoryPath to be defined')
   assert.ok(repositoryUrl, 'Expected repositoryUrl to be defined')
@@ -61,10 +62,18 @@ export async function prepareExistingDirectory(
       // Remove any conflicting refs/remotes/origin/*
       // Example 1: Consider ref is refs/heads/foo and previously fetched refs/remotes/origin/foo/bar
       // Example 2: Consider ref is refs/heads/foo/bar and previously fetched refs/remotes/origin/foo
-      if (ref) {
-        ref = ref.startsWith('refs/') ? ref : `refs/heads/${ref}`
-        if (ref.startsWith('refs/heads/')) {
-          const upperName1 = ref.toUpperCase().substr('REFS/HEADS/'.length)
+      // The extra fetch refs are fetched with exact refspecs, so --prune does not clear these either
+      for (let conflictRef of [ref, ...fetchRefs]) {
+        if (!conflictRef) {
+          continue
+        }
+        conflictRef = conflictRef.startsWith('refs/')
+          ? conflictRef
+          : `refs/heads/${conflictRef}`
+        if (conflictRef.startsWith('refs/heads/')) {
+          const upperName1 = conflictRef
+            .toUpperCase()
+            .substr('REFS/HEADS/'.length)
           const upperName1Slash = `${upperName1}/`
           branches = await git.branchList(true)
           for (const branch of branches) {

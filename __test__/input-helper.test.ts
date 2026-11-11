@@ -22,6 +22,14 @@ describe('input-helper tests', () => {
       return inputs[name]
     })
 
+    // Mock getMultilineInput the way @actions/core implements it
+    jest.spyOn(core, 'getMultilineInput').mockImplementation((name: string) =>
+      (inputs[name] || '')
+        .split('\n')
+        .filter((x: string) => x !== '')
+        .map((x: string) => x.trim())
+    )
+
     // Mock error/warning/info/debug
     jest.spyOn(core, 'error').mockImplementation(jest.fn())
     jest.spyOn(core, 'warning').mockImplementation(jest.fn())
@@ -84,6 +92,7 @@ describe('input-helper tests', () => {
     expect(settings.sparseCheckoutConeMode).toBe(true)
     expect(settings.fetchDepth).toBe(1)
     expect(settings.fetchTags).toBe(false)
+    expect(settings.fetchRefs).toEqual([])
     expect(settings.showProgress).toBe(true)
     expect(settings.lfs).toBe(false)
     expect(settings.ref).toBe('refs/heads/some-ref')
@@ -138,6 +147,27 @@ describe('input-helper tests', () => {
     const settings: IGitSourceSettings = await inputHelper.getInputs()
     expect(settings.ref).toBe('refs/heads/some-other-ref')
     expect(settings.commit).toBeFalsy()
+  })
+
+  it('reads fetch refs and drops blank lines', async () => {
+    inputs['fetch-refs'] = 'refs/heads/main\n\n   \n  refs/heads/feature/x  \n'
+    const settings: IGitSourceSettings = await inputHelper.getInputs()
+    expect(settings.fetchRefs).toEqual([
+      'refs/heads/main',
+      'refs/heads/feature/x'
+    ])
+  })
+
+  it('requires qualified fetch refs', async () => {
+    inputs['fetch-refs'] = 'refs/heads/main\nmain'
+    try {
+      await inputHelper.getInputs()
+      throw 'should not reach here'
+    } catch (err) {
+      expect(`(${(err as any).message}`).toMatch(
+        "Invalid fetch-refs entry 'main'"
+      )
+    }
   })
 
   it('sets workflow organization ID', async () => {

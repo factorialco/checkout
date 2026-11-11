@@ -113,6 +113,21 @@ export async function getInputs(): Promise<IGitSourceSettings> {
     (core.getInput('fetch-tags') || 'false').toUpperCase() === 'TRUE'
   core.debug(`fetch tags = ${result.fetchTags}`)
 
+  // Fetch refs
+  // A workflow expression that evaluates to '' leaves a blank or whitespace-only line
+  result.fetchRefs = core
+    .getMultilineInput('fetch-refs')
+    .filter(fetchRef => fetchRef)
+  for (const fetchRef of result.fetchRefs) {
+    // An unqualified name would become a glob refspec (see getRefSpec)
+    if (!fetchRef.startsWith('refs/')) {
+      throw new Error(
+        `Invalid fetch-refs entry '${fetchRef}'. Use a fully qualified ref, for example 'refs/heads/${fetchRef}'.`
+      )
+    }
+  }
+  core.debug(`fetch refs = ${result.fetchRefs}`)
+
   // Show fetch progress
   result.showProgress =
     (core.getInput('show-progress') || 'true').toUpperCase() === 'TRUE'
